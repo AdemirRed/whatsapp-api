@@ -34,7 +34,7 @@ const sessionNameValidation = async (req, res, next) => {
       description: 'Unique identifier for the session (alphanumeric and - allowed)',
       required: true,
       type: 'string',
-      example: 'f8377d8d-a589-4242-9ba6-9486a04ef80c'
+      example: 'redblack'
     }
   */
   if ((!/^[\w-]+$/.test(req.params.sessionId))) {
@@ -100,7 +100,7 @@ const contactSwagger = async (req, res, next) => {
           contactId: {
             type: 'string',
             description: 'Unique whatsApp identifier for the contact',
-            example: '6281288888888@c.us'
+            example: '555197756708@c.us'
           }
         }
       }
@@ -120,7 +120,7 @@ const messageSwagger = async (req, res, next) => {
           chatId: {
             type: 'string',
             description: 'The Chat id which contains the message',
-            example: '6281288888888@c.us'
+            example: '555197756708@c.us'
           },
           messageId: {
             type: 'string',
@@ -145,7 +145,7 @@ const chatSwagger = async (req, res, next) => {
           chatId: {
             type: 'string',
             description: 'Unique whatsApp identifier for the given Chat (either group or personnal)',
-            example: '6281288888888@c.us'
+            example: '555197756708@c.us'
           }
         }
       }
@@ -165,11 +165,25 @@ const groupChatSwagger = async (req, res, next) => {
           chatId: {
             type: 'string',
             description: 'Unique whatsApp identifier for the given Chat (either group or personnal)',
-            example: '6281288888888@c.us'
+            example: '555197756708@c.us'
           }
         }
       }
     }
+  */
+  next()
+}
+
+const audioSwagger = async (req, res, next) => {
+  /*
+    #swagger.tags = ['Audio']
+  */
+  next()
+}
+
+const stickerSwagger = async (req, res, next) => {
+  /*
+    #swagger.tags = ['Sticker']
   */
   next()
 }
@@ -184,5 +198,7 @@ module.exports = {
   messageSwagger,
   chatSwagger,
   groupChatSwagger,
+  audioSwagger,
+  stickerSwagger,
   rateLimiter
 }

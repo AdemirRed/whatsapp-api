@@ -3,6 +3,7 @@ const routes = express.Router()
 const swaggerUi = require('swagger-ui-express')
 const swaggerDocument = require('../swagger.json')
 const { enableLocalCallbackExample, enableSwaggerEndpoint } = require('./config')
+const path = require('path')
 
 const middleware = require('./middleware')
 const healthController = require('./controllers/healthController')
@@ -12,6 +13,20 @@ const chatController = require('./controllers/chatController')
 const groupChatController = require('./controllers/groupChatController')
 const messageController = require('./controllers/messageController')
 const contactController = require('./controllers/contactController')
+const audioController = require('./controllers/audioController')
+const stickerController = require('./controllers/stickerController')
+const fileController = require('./controllers/fileController')
+
+/**
+ * ================
+ * WEB INTERFACE
+ * ================
+ */
+
+// Serve the HTML interface
+routes.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../index.html'))
+})
 
 /**
  * ================
@@ -21,6 +36,7 @@ const contactController = require('./controllers/contactController')
 
 // API endpoint to check if server is alive
 routes.get('/ping', healthController.ping)
+routes.get('/health', healthController.ping)
 // API basic callback
 if (enableLocalCallbackExample) {
   routes.post('/localCallbackExample', [middleware.apikey, middleware.rateLimiter], healthController.localCallbackExample)
@@ -44,6 +60,8 @@ sessionRouter.get('/restart/:sessionId', middleware.sessionNameValidation, sessi
 sessionRouter.get('/terminate/:sessionId', middleware.sessionNameValidation, sessionController.terminateSession)
 sessionRouter.get('/terminateInactive', sessionController.terminateInactiveSessions)
 sessionRouter.get('/terminateAll', sessionController.terminateAllSessions)
+sessionRouter.get('/list', sessionController.listSessions)
+sessionRouter.post('/requestPairingCode/:sessionId', middleware.sessionNameValidation, sessionController.requestPairingCode)
 
 /**
  * ================
@@ -159,10 +177,12 @@ messageRouter.post('/react/:sessionId', [middleware.sessionNameValidation, middl
 messageRouter.post('/reply/:sessionId', [middleware.sessionNameValidation, middleware.sessionValidation], messageController.reply)
 messageRouter.post('/star/:sessionId', [middleware.sessionNameValidation, middleware.sessionValidation], messageController.star)
 messageRouter.post('/unstar/:sessionId', [middleware.sessionNameValidation, middleware.sessionValidation], messageController.unstar)
+messageRouter.post('/edit/:sessionId', [middleware.sessionNameValidation, middleware.sessionValidation], messageController.editMessage)
+messageRouter.post('/sync/:sessionId', [middleware.sessionNameValidation, middleware.sessionValidation], messageController.syncMessages)
 
 /**
  * ================
- * MESSAGE ENDPOINTS
+ * CONTACT ENDPOINTS
  * ================
  */
 const contactRouter = express.Router()
@@ -178,6 +198,44 @@ contactRouter.post('/unblock/:sessionId', [middleware.sessionNameValidation, mid
 contactRouter.post('/getFormattedNumber/:sessionId', [middleware.sessionNameValidation, middleware.sessionValidation], contactController.getFormattedNumber)
 contactRouter.post('/getCountryCode/:sessionId', [middleware.sessionNameValidation, middleware.sessionValidation], contactController.getCountryCode)
 contactRouter.post('/getProfilePicUrl/:sessionId', [middleware.sessionNameValidation, middleware.sessionValidation], contactController.getProfilePicUrl)
+
+/**
+ * ================
+ * AUDIO ENDPOINTS
+ * ================
+ */
+const audioRouter = express.Router()
+audioRouter.use(middleware.apikey)
+sessionRouter.use(middleware.audioSwagger)
+routes.use('/audio', audioRouter)
+
+audioRouter.post('/transcribe/:sessionId', [middleware.sessionNameValidation, middleware.sessionValidation], audioController.transcribeAudio)
+audioRouter.get('/fileToBase64', audioController.fileToBase64Page)
+
+/**
+ * ================
+ * STICKER ENDPOINTS
+ * ================
+ */
+const stickerRouter = express.Router()
+stickerRouter.use(middleware.apikey)
+sessionRouter.use(middleware.stickerSwagger)
+routes.use('/sticker', stickerRouter)
+
+stickerRouter.get('/create', stickerController.createStickerPage)
+stickerRouter.post('/convert', stickerController.convertToSticker)
+
+/**
+ * ================
+ * FILE ENDPOINTS
+ * ================
+ */
+const fileRouter = express.Router()
+fileRouter.use(middleware.apikey)
+routes.use('/file', fileRouter)
+
+fileRouter.get('/fileToBase64', fileController.fileToBase64Page)
+
 /**
  * ================
  * SWAGGER ENDPOINTS

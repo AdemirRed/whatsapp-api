@@ -46,19 +46,22 @@ const sendMessage = async (req, res) => {
             }
           },
           examples: {
-            string: { value: { chatId: '6281288888888@c.us', contentType: 'string', content: 'Hello World!' } },
-            MessageMedia: { value: { chatId: '6281288888888@c.us', contentType: 'MessageMedia', content: { mimetype: 'image/jpeg', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', filename: 'image.jpg' } } },
-            MessageMediaFromURL: { value: { chatId: '6281288888888@c.us', contentType: 'MessageMediaFromURL', content: 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=Example' } },
-            Location: { value: { chatId: '6281288888888@c.us', contentType: 'Location', content: { latitude: -6.2, longitude: 106.8, description: 'Jakarta' } } },
-            Buttons: { value: { chatId: '6281288888888@c.us', contentType: 'Buttons', content: { body: 'Hello World!', buttons: [{ body: 'button 1' }], title: 'Hello World!', footer: 'Hello World!' } } },
+            string: { value: { chatId: '555197756708@c.us', contentType: 'string', content: 'Hello World!' } },
+            MessageMedia: { value: { chatId: '555197756708@c.us', contentType: 'MessageMedia', content: { mimetype: 'image/jpeg', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', filename: 'image.jpg' } } },
+            MessageMediaFromURL: { value: { chatId: '555197756708@c.us', contentType: 'MessageMediaFromURL', content: 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=Example' } },
+            Location: { value: { chatId: '555197756708@c.us', contentType: 'Location', content: { latitude: -6.2, longitude: 106.8, description: 'Jakarta' } } },
+            Buttons: { value: { chatId: '555197756708@c.us', contentType: 'Buttons', content: { body: 'Hello World!', buttons: [{ body: 'button 1' }], title: 'Hello World!', footer: 'Hello World!' } } },
             List: {
-              value: { chatId: '6281288888888@c.us', contentType: 'List', content: { body: 'Hello World!', buttonText: 'Hello World!', sections: [{ title: 'sectionTitle', rows: [{ id: 'customId', title: 'ListItem2', description: 'desc' }, { title: 'ListItem2' }] }], title: 'Hello World!', footer: 'Hello World!' } }
+              value: { chatId: '555197756708@c.us', contentType: 'List', content: { body: 'Hello World!', buttonText: 'Hello World!', sections: [{ title: 'sectionTitle', rows: [{ id: 'customId', title: 'ListItem2', description: 'desc' }, { title: 'ListItem2' }] }], title: 'Hello World!', footer: 'Hello World!' } }
             },
             Contact: {
-              value: { chatId: '6281288888888@c.us', contentType: 'Contact', content: { contactId: '6281288888889@c.us' } }
+              value: { chatId: '555197756708@c.us', contentType: 'Contact', content: { contactId: '6281288888889@c.us' } }
             },
             Poll: {
-              value: { chatId: '6281288888888@c.us', contentType: 'Poll', content: { pollName: 'Cats or Dogs?', pollOptions: ['Cats', 'Dogs'], options: { allowMultipleAnswers: true } } }
+              value: { chatId: '555197756708@c.us', contentType: 'Poll', content: { pollName: 'Cats or Dogs?', pollOptions: ['Cats', 'Dogs'], options: { allowMultipleAnswers: true } } }
+            },
+            Sticker: {
+              value: { chatId: '555197756708@c.us', contentType: 'Sticker', content: { mimetype: 'image/webp', data: 'UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAwA0JaQAA3AA/vuUAAA=', filename: 'sticker.webp' }, options: { sendMediaAsSticker: true, stickerAuthor: 'WhatsApp API', stickerName: 'My Sticker' } }
             },
           }
         }
@@ -117,8 +120,13 @@ const sendMessage = async (req, res) => {
         messageOut = await client.sendMessage(chatId, poll, options)
         break
       }
+      case 'Sticker': {
+        const stickerMedia = new MessageMedia(content.mimetype, content.data, content.filename, content.filesize)
+        messageOut = await client.sendMessage(chatId, stickerMedia, { ...options, sendMediaAsSticker: true })
+        break
+      }
       default:
-        return sendErrorResponse(res, 404, 'contentType invalid, must be string, MessageMedia, MessageMediaFromURL, Location, Buttons, List, Contact or Poll')
+        return sendErrorResponse(res, 404, 'contentType invalid, must be string, MessageMedia, MessageMediaFromURL, Location, Buttons, List, Contact, Poll or Sticker')
     }
 
     res.json({ success: true, message: messageOut })
@@ -171,7 +179,7 @@ const isRegisteredUser = async (req, res) => {
           number: {
             type: 'string',
             description: 'The number or ID (\"@c.us\" will be automatically appended if not specified)',
-            example: '6281288888888'
+            example: '555197756708'
           },
         }
       },
@@ -209,7 +217,7 @@ const getNumberId = async (req, res) => {
           number: {
             type: 'string',
             description: 'The number or ID (\"@c.us\" will be automatically appended if not specified)',
-            example: '6281288888888'
+            example: '555197756708'
           },
         }
       },
@@ -352,7 +360,7 @@ const getProfilePictureUrl = async (req, res) => {
           contactId: {
             type: 'string',
             description: 'The contact ID\'s of profile',
-            example: '6281288888888@c.us'
+            example: '555197756708@c.us'
           },
         }
       },

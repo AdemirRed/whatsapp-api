@@ -129,7 +129,7 @@ const fetchMessages = async (req, res) => {
           chatId: {
             type: 'string',
             description: 'Unique whatsApp identifier for the given Chat (either group or personnal)',
-            example: '6281288888888@c.us'
+            example: '555197756708@c.us'
           },
           searchOptions: {
             type: 'object',

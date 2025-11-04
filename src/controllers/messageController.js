@@ -12,10 +12,42 @@ const { sendErrorResponse } = require('../utils')
  * @throws {Error} - Throws an error if the provided client, message ID or chat ID is invalid.
  */
 const _getMessageById = async (client, messageId, chatId) => {
-  const chat = await client.getChatById(chatId)
-  const messages = await chat.fetchMessages({ limit: 100 })
-  const message = messages.find((message) => { return message.id.id === messageId })
-  return message
+  if (!client) {
+    throw new Error('Client is not available')
+  }
+  
+  if (!client.getChatById) {
+    throw new Error('Client is not properly initialized')
+  }
+
+  try {
+    const chat = await client.getChatById(chatId)
+    if (!chat) {
+      throw new Error('Chat not found')
+    }
+    
+    const messages = await chat.fetchMessages({ limit: 100 })
+    
+    // Try different ways to find the message
+    let message = messages.find((msg) => msg.id.id === messageId)
+    
+    if (!message) {
+      // Try with full message ID
+      message = messages.find((msg) => msg.id._serialized === messageId)
+    }
+    
+    if (!message) {
+      // Try just matching the end of the ID
+      message = messages.find((msg) => 
+        msg.id.id.includes(messageId) || 
+        msg.id._serialized.includes(messageId)
+      )
+    }
+    
+    return message
+  } catch (error) {
+    throw new Error(`Failed to get message: ${error.message}`)
+  }
 }
 
 /**
@@ -358,6 +390,338 @@ const unstar = async (req, res) => {
   }
 }
 
+/**
+ * @function editMessage
+ * @async
+ * @description Edits a message by message ID and chat ID.
+ * @param {Object} req - The request object.
+ * @param {Object} res - The response object.
+ * @param {string} req.params.sessionId - The session ID.
+ * @param {string} req.body.messageId - The message ID.
+ * @param {string} req.body.chatId - The chat ID.
+ * @param {string} req.body.newContent - The new content for the message.
+ * @returns {Promise} A Promise that resolves with the result of the message.edit() call.
+ * @throws {Error} If message is not found or cannot be edited, it throws an error.
+ */
+const editMessage = async (req, res) => {
+  // #swagger.summary = 'Edit a message'
+  // #swagger.description = 'Edit a message content by message ID and chat ID. Only messages sent by you can be edited.'
+  /* #swagger.requestBody = {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: 'object',
+            properties: {
+              chatId: {
+                type: 'string',
+                description: 'The Chat id which contains the message',
+                example: '555197756708@c.us'
+              },
+              messageId: {
+                type: 'string',
+                description: 'Unique whatsApp identifier for the message',
+                example: 'ABCDEF999999999'
+              },
+              newContent: {
+                type: 'string',
+                description: 'The new text content for the message',
+                example: 'This is the edited message'
+              }
+            },
+            required: ['chatId', 'messageId', 'newContent']
+          }
+        }
+      }
+    }
+  */
+  try {
+    const { messageId, chatId, newContent } = req.body
+
+    if (!newContent) {
+      /* #swagger.responses[400] = {
+        description: "Bad Request - New content is required.",
+        content: {
+          "application/json": {
+            schema: { "$ref": "#/definitions/ErrorResponse" }
+          }
+        }
+      }
+      */
+      return sendErrorResponse(res, 400, 'New content is required')
+    }
+
+    if (!messageId || !chatId) {
+      return sendErrorResponse(res, 400, 'messageId and chatId are required')
+    }
+
+    const client = sessions.get(req.params.sessionId)
+    
+    if (!client) {
+      return sendErrorResponse(res, 404, 'Session not found')
+    }
+
+    // Check if client is ready
+    const state = await client.getState()
+    if (state !== 'CONNECTED') {
+      return sendErrorResponse(res, 422, `Session not connected. Current state: ${state}`)
+    }
+
+    const message = await _getMessageById(client, messageId, chatId)
+    
+    if (!message) {
+      /* #swagger.responses[404] = {
+        description: "Message not found.",
+        content: {
+          "application/json": {
+            schema: { "$ref": "#/definitions/ErrorResponse" }
+          }
+        }
+      }
+      */
+      return sendErrorResponse(res, 404, 'Message not found')
+    }
+
+    // Check if message is from the current user
+    if (!message.fromMe) {
+      /* #swagger.responses[403] = {
+        description: "Forbidden - You can only edit your own messages.",
+        content: {
+          "application/json": {
+            schema: { "$ref": "#/definitions/ErrorResponse" }
+          }
+        }
+      }
+      */
+      return sendErrorResponse(res, 403, 'You can only edit your own messages')
+    }
+
+    // Check if message can be edited (must be recent and text message)
+    if (!message.body || message.type !== 'chat') {
+      return sendErrorResponse(res, 422, 'Only text messages can be edited')
+    }
+
+    // Check if message is too old (WhatsApp allows editing only recent messages)
+    const messageAge = Date.now() - (message.timestamp * 1000)
+    const maxEditAge = 15 * 60 * 1000 // 15 minutes in milliseconds
+    
+    if (messageAge > maxEditAge) {
+      return sendErrorResponse(res, 422, 'Message is too old to edit (max 15 minutes)')
+    }
+
+    console.log('Original message body:', message.body)
+    console.log('New content:', newContent)
+
+    // Edit the message using the official method with proper options
+    const editOptions = {
+      linkPreview: false, // Disable link preview for better compatibility
+      mentions: [], // No mentions by default
+      groupMentions: [] // No group mentions by default
+    }
+
+    const result = await message.edit(newContent, editOptions)
+    
+    console.log('Edit result:', result)
+
+    if (!result) {
+      return sendErrorResponse(res, 422, 'Failed to edit message. This message may not be editable.')
+    }
+
+    // Wait a moment for WhatsApp to process the edit
+    await new Promise(resolve => setTimeout(resolve, 1500))
+
+    // Re-fetch the message to get the updated content
+    const updatedMessage = await _getMessageById(client, messageId, chatId)
+    
+    if (!updatedMessage) {
+      return sendErrorResponse(res, 500, 'Message was edited but could not retrieve updated content')
+    }
+
+    console.log('Updated message body:', updatedMessage.body)
+
+    // Check if the edit was actually successful
+    if (updatedMessage.body !== newContent) {
+      console.warn('Message edit may not have taken effect. Expected:', newContent, 'Got:', updatedMessage.body)
+    }
+
+    /* #swagger.responses[200] = {
+      description: "Message edited successfully.",
+      content: {
+        "application/json": {
+          schema: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean', example: true },
+              result: { type: 'object' },
+              message: { type: 'string', example: 'Message edited successfully' }
+            }
+          }
+        }
+      }
+    }
+    */
+    
+    const responseData = {
+      success: true,
+      result: {
+        id: result.id ? result.id._serialized || result.id : updatedMessage.id._serialized,
+        messageId: result.id ? result.id.id || result.id : updatedMessage.id.id,
+        body: updatedMessage.body,
+        timestamp: updatedMessage.timestamp,
+        fromMe: updatedMessage.fromMe,
+        type: updatedMessage.type,
+        originalBody: message.body,
+        newBody: updatedMessage.body,
+        editSuccessful: updatedMessage.body === newContent
+      },
+      message: updatedMessage.body === newContent ? 'Message edited successfully' : 'Message edit completed, but content may not have updated as expected'
+    }
+
+    res.json(responseData)
+  } catch (error) {
+    /* #swagger.responses[500] = {
+      description: "Server Failure.",
+      content: {
+        "application/json": {
+          schema: { "$ref": "#/definitions/ErrorResponse" }
+        }
+      }
+    }
+    */
+    console.log('editMessage ERROR', error)
+    sendErrorResponse(res, 500, error.message)
+  }
+}
+
+/**
+ * @function syncMessages
+ * @async
+ * @description Synchronizes messages from a chat to ensure latest messages are available.
+ * @param {Object} req - The request object.
+ * @param {Object} res - The response object.
+ * @param {string} req.params.sessionId - The session ID.
+ * @param {string} req.body.chatId - The chat ID.
+ * @param {number} req.body.limit - Number of messages to sync (default: 50).
+ * @returns {Promise} A Promise that resolves with the synced messages.
+ */
+const syncMessages = async (req, res) => {
+  // #swagger.summary = 'Sync messages from chat'
+  // #swagger.description = 'Synchronizes and fetches recent messages from a chat to ensure they are available for operations like editing.'
+  /* #swagger.requestBody = {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: 'object',
+            properties: {
+              chatId: {
+                type: 'string',
+                description: 'The Chat id to sync messages from',
+                example: '555197756708@c.us'
+              },
+              limit: {
+                type: 'number',
+                description: 'Number of messages to fetch (default: 50, max: 100)',
+                example: 50
+              }
+            },
+            required: ['chatId']
+          }
+        }
+      }
+    }
+  */
+  try {
+    const { chatId, limit = 50 } = req.body
+
+    if (!chatId) {
+      return sendErrorResponse(res, 400, 'chatId is required')
+    }
+
+    const client = sessions.get(req.params.sessionId)
+    
+    if (!client) {
+      return sendErrorResponse(res, 404, 'Session not found')
+    }
+
+    // Check if client is ready
+    const state = await client.getState()
+    if (state !== 'CONNECTED') {
+      return sendErrorResponse(res, 422, `Session not connected. Current state: ${state}`)
+    }
+
+    const chat = await client.getChatById(chatId)
+    if (!chat) {
+      return sendErrorResponse(res, 404, 'Chat not found')
+    }
+
+    // Fetch recent messages
+    const fetchLimit = Math.min(Math.max(limit, 1), 100) // Between 1 and 100
+    const messages = await chat.fetchMessages({ limit: fetchLimit })
+
+    const messageList = messages.map(msg => ({
+      id: msg.id._serialized,
+      messageId: msg.id.id,
+      body: msg.body,
+      timestamp: msg.timestamp,
+      fromMe: msg.fromMe,
+      author: msg.author,
+      type: msg.type,
+      hasMedia: msg.hasMedia
+    }))
+
+    /* #swagger.responses[200] = {
+      description: "Messages synchronized successfully.",
+      content: {
+        "application/json": {
+          schema: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean', example: true },
+              chatId: { type: 'string', example: '555197756708@c.us' },
+              messageCount: { type: 'number', example: 25 },
+              messages: { 
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    messageId: { type: 'string' },
+                    body: { type: 'string' },
+                    timestamp: { type: 'number' },
+                    fromMe: { type: 'boolean' },
+                    type: { type: 'string' }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    */
+    res.json({ 
+      success: true, 
+      chatId,
+      messageCount: messageList.length,
+      messages: messageList,
+      message: 'Messages synchronized successfully'
+    })
+  } catch (error) {
+    /* #swagger.responses[500] = {
+      description: "Server Failure.",
+      content: {
+        "application/json": {
+          schema: { "$ref": "#/definitions/ErrorResponse" }
+        }
+      }
+    }
+    */
+    console.log('syncMessages ERROR', error)
+    sendErrorResponse(res, 500, error.message)
+  }
+}
+
 module.exports = {
   getClassInfo,
   deleteMessage,
@@ -371,5 +735,7 @@ module.exports = {
   react,
   reply,
   star,
-  unstar
+  unstar,
+  editMessage,
+  syncMessages
 }

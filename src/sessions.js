@@ -2,7 +2,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js')
 const fs = require('fs')
 const path = require('path')
 const sessions = new Map()
-const { baseWebhookURL, sessionFolderPath, maxAttachmentSize, setMessagesAsSeen, webVersion, webVersionCacheType, recoverSessions } = require('./config')
+const { baseWebhookURL, sessionFolderPath, maxAttachmentSize, setMessagesAsSeen, webVersion, webVersionCacheType, recoverSessions, headlessBrowser } = require('./config')
 const { triggerWebhook, waitForNestedObject, checkIfEventisEnabled } = require('./utils')
 
 // Function to validate if the session is ready
@@ -41,11 +41,29 @@ const validateSession = async (sessionId) => {
       }
     }
 
-    const state = await client.getState()
-    returnData.state = state
-    if (state !== 'CONNECTED') {
-      returnData.message = 'session_not_connected'
-      return returnData
+    try {
+      const state = await client.getState()
+      returnData.state = state
+      if (state !== 'CONNECTED') {
+        returnData.message = 'session_not_connected'
+        return returnData
+      }
+    } catch (stateError) {
+      console.log('Error getting state:', stateError.message)
+      // Try alternative state check
+      try {
+        const isReady = await client.pupPage.evaluate(() => {
+          return window.Store && window.Store.State && window.Store.State.default && window.Store.State.default.state === 'CONNECTED'
+        })
+        if (!isReady) {
+          returnData.message = 'session_not_connected'
+          return returnData
+        }
+        returnData.state = 'CONNECTED'
+      } catch (altError) {
+        returnData.message = 'session_state_unknown'
+        return returnData
+      }
     }
 
     // Session Connected 🎉
@@ -98,7 +116,7 @@ const setupSession = (sessionId) => {
     const clientOptions = {
       puppeteer: {
         executablePath: process.env.CHROME_BIN || null,
-        // headless: false,
+        headless: headlessBrowser,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
       },
       userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',

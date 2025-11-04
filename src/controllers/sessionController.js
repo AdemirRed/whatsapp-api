@@ -363,6 +363,193 @@ const terminateAllSessions = async (req, res) => {
   }
 }
 
+/**
+ * List all sessions with their status.
+ *
+ * @function
+ * @async
+ * @param {Object} req - The HTTP request object.
+ * @param {Object} res - The HTTP response object.
+ * @returns {Promise<void>}
+ * @throws {Error} If there was an error listing the sessions.
+ */
+const listSessions = async (req, res) => {
+  // #swagger.summary = 'List all sessions'
+  // #swagger.description = 'Lists all sessions with their current status.'
+  try {
+    const sessionList = []
+    
+    for (const [sessionId, client] of sessions.entries()) {
+      try {
+        const sessionData = await validateSession(sessionId)
+        sessionList.push({
+          sessionId,
+          status: sessionData.state || 'DISCONNECTED',
+          success: sessionData.success,
+          message: sessionData.message
+        })
+      } catch (error) {
+        sessionList.push({
+          sessionId,
+          status: 'ERROR',
+          success: false,
+          message: error.message
+        })
+      }
+    }
+    
+    /* #swagger.responses[200] = {
+      description: "List of all sessions.",
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              sessions: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    sessionId: { type: "string" },
+                    status: { type: "string" },
+                    success: { type: "boolean" },
+                    message: { type: "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    */
+    res.json({ success: true, sessions: sessionList })
+  } catch (error) {
+    /* #swagger.responses[500] = {
+      description: "Server Failure.",
+      content: {
+        "application/json": {
+          schema: { "$ref": "#/definitions/ErrorResponse" }
+        }
+      }
+    }
+    */
+    console.log('listSessions ERROR', error)
+    sendErrorResponse(res, 500, error.message)
+  }
+}
+
+/**
+ * Request pairing code for phone number authentication.
+ *
+ * @function
+ * @async
+ * @param {Object} req - The HTTP request object.
+ * @param {Object} res - The HTTP response object.
+ * @param {string} req.params.sessionId - The session ID.
+ * @param {string} req.body.phoneNumber - Phone number in international format.
+ * @param {boolean} req.body.showNotification - Show notification on phone.
+ * @returns {Promise<void>}
+ * @throws {Error} If there was an error requesting pairing code.
+ */
+const requestPairingCode = async (req, res) => {
+  // #swagger.summary = 'Request pairing code'
+  // #swagger.description = 'Request authentication via pairing code instead of QR code for phone number authentication.'
+  /* #swagger.requestBody = {
+      required: true,
+      content: {
+        "application/json": {
+          schema: { 
+            $ref: "#/definitions/RequestPairingCodeBody" 
+          },
+          examples: {
+            brasil: {
+              summary: "Example with Brazilian number",
+              value: {
+                phoneNumber: "555197756708",
+                showNotification: true
+              }
+            },
+            usa: {
+              summary: "Example with US number",
+              value: {
+                phoneNumber: "12025550108",
+                showNotification: true
+              }
+            }
+          }
+        }
+      }
+    }
+  */
+  try {
+    const sessionId = req.params.sessionId
+    const { phoneNumber, showNotification = true } = req.body
+
+    if (!phoneNumber) {
+      /* #swagger.responses[400] = {
+        description: "Bad Request - Phone number is required.",
+        content: {
+          "application/json": {
+            schema: { "$ref": "#/definitions/ErrorResponse" }
+          }
+        }
+      }
+      */
+      sendErrorResponse(res, 400, 'Phone number is required')
+      return
+    }
+
+    // Check if session exists
+    const session = sessions.get(sessionId)
+    if (!session) {
+      /* #swagger.responses[404] = {
+        description: "Session not found.",
+        content: {
+          "application/json": {
+            schema: { "$ref": "#/definitions/ErrorResponse" }
+          }
+        }
+      }
+      */
+      sendErrorResponse(res, 404, 'Session not found')
+      return
+    }
+
+    // Request pairing code
+    const pairingCode = await session.requestPairingCode(phoneNumber, showNotification)
+
+    /* #swagger.responses[200] = {
+      description: "Pairing code generated successfully.",
+      content: {
+        "application/json": {
+          schema: { "$ref": "#/definitions/RequestPairingCodeResponse" }
+        }
+      }
+    }
+    */
+    res.json({ 
+      success: true, 
+      pairingCode,
+      phoneNumber,
+      message: 'Pairing code generated. Enter this code on your phone.' 
+    })
+  } catch (error) {
+    /* #swagger.responses[500] = {
+      description: "Server Failure.",
+      content: {
+        "application/json": {
+          schema: { "$ref": "#/definitions/ErrorResponse" }
+        }
+      }
+    }
+    */
+    console.log('requestPairingCode ERROR', error)
+    sendErrorResponse(res, 500, error.message)
+  }
+}
+
 module.exports = {
   startSession,
   statusSession,
@@ -371,5 +558,7 @@ module.exports = {
   restartSession,
   terminateSession,
   terminateInactiveSessions,
-  terminateAllSessions
+  terminateAllSessions,
+  listSessions,
+  requestPairingCode
 }
